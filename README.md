@@ -1,16 +1,23 @@
 # kafka-kinesis
+[![Release](https://img.shields.io/github/release/giuliocalzolari/golang-kafka-kinesis-connector.svg?style=flat-square)](https://github.com/giuliocalzolari/golang-kafka-kinesis-connector/releases/latest)
+[![Travis](https://img.shields.io/travis/giuliocalzolari/golang-kafka-kinesis-connector.svg?style=flat-square)](https://travis-ci.org/giuliocalzolari/golang-kafka-kinesis-connector)
+[![Go Report Card](https://goreportcard.com/badge/github.com/giuliocalzolari/golang-kafka-kinesis-connector?style=flat-square)](https://goreportcard.com/report/github.com/giuliocalzolari/golang-kafka-kinesis-connector)
+
 
 A simple command line tool to consume partitions of a topic and push to kinesis
 
 ### Installation
 
+    git clone git@github.com:giuliocalzolari/golang-kafka-kinesis-connector.git
+    cd ./golang-kafka-kinesis-connector/
     go build
 
 
 ### Usage
 
-    ./kafka-kinesis -topic=test -region=eu-central-1 -stream=kafka-to-kinesis -zookeeper=localhost:2181 -brokers=localhost:9092 -verbose
+    $ ./kafka-kinesis -topic=test -region=eu-central-1 -stream=kafka-to-kinesis -zookeeper=localhost:2181 -brokers=localhost:9092 -verbose
 
+    $ ./kafka-kinesis -help
 
     Usage of ./kafka-kinesis:
       -brokers string
