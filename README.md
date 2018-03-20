@@ -5,28 +5,34 @@ A simple command line tool to consume partitions of a topic and push to kinesis
 ### Installation
 
     go build
-    ./kafka-kinesis -topic=test -region=eu-central-1 -stream=kafka-to-kinesis -offset=newest
+
 
 ### Usage
 
-    # Minimum invocation
-    ./kafka-kinesis -topic=test -brokers=kafka1:9092
+    ./kafka-kinesis -topic=test -region=eu-central-1 -stream=kafka-to-kinesis -zookeeper=localhost:2181 -brokers=localhost:9092 -verbose
 
-    # It will pick up a KAFKA_PEERS environment variable
-    export KAFKA_PEERS=kafka1:9092,kafka2:9092,kafka3:9092
-    ./kafka-kinesis -topic=test
 
-    # You can specify the offset you want to start at. It can be either
-    # `oldest`, `newest`. The default is `newest`.
-    ./kafka-kinesis -topic=test -offset=oldest
-    ./kafka-kinesis -topic=test -offset=newest
-
-    # You can specify the partition(s) you want to consume as a comma-separated
-    # list. The default is `all`.
-    ./kafka-kinesis -topic=test -partitions=1,2,3
-
-    # Display all command line options
-    ./kafka-kinesis -help
+    Usage of ./kafka-kinesis:
+      -brokers string
+        	The comma separated list of brokers in the Kafka cluster (default "localhost:9092")
+      -buffer-size int
+        	The buffer size of the message channel. (default 256)
+      -group string
+        	The name of the consumer group, used for coordination and load balancing (default "default")
+      -offset oldest
+        	The offset to start with. Can be oldest, `newest` (default "newest")
+      -partitions string
+        	The partitions to consume, can be 'all' or comma-separated numbers (default "all")
+      -region string
+        	your AWS region (default "eu-west-1")
+      -stream string
+        	your stream name (default "your-stream")
+      -topic string
+        	REQUIRED: the topic to consume
+      -verbose
+        	Whether to turn on sarama logging
+      -zookeeper zookeeper1.local:2181,zookeeper2.local:2181
+        	A comma-separated Zookeeper connection string (e.g. zookeeper1.local:2181,zookeeper2.local:2181)    
 
 ## Service
 

@@ -53,6 +53,7 @@ coverage.xml
 # Translations
 *.mo
 *.pot
+kafka-kinesis
 
 # Django stuff:
 *.log
