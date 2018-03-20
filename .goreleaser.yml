@@ -1,7 +1,5 @@
 builds:
-  - binary: cli53
-    main: ./cmd/cli53
-    ldflags: -s -w -X=github.com/barnybug/cli53.version={{.Version}}
+  - binary: kafka-kinesis
     goos:
       - linux
       - darwin
@@ -14,8 +12,6 @@ builds:
     ignore:
       - goos: darwin
         goarch: 386
-    hooks:
-      post: make upx
 archive:
   name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
   format: binary
