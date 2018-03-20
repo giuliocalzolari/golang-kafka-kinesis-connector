@@ -1,0 +1,12 @@
+[Unit]
+Description=Kafka kinesis Connector
+After=network.target
+
+[Service]
+Type=simple
+User=kafka
+ExecStart=/opt/kafka-kinesis/kafka-kinesis  -topic=test -region=eu-central-1 -stream=kafka-to-kinesis -offset=newest
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
