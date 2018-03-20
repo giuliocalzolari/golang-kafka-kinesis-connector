@@ -20,19 +20,18 @@ import (
 var (
 	brokerList = flag.String("brokers", os.Getenv("KAFKA_PEERS"), "The comma separated list of brokers in the Kafka cluster")
 	topic      = flag.String("topic", "", "REQUIRED: the topic to consume")
-	partitions = flag.String("partitions", "all", "The partitions to consume, can be 'all' or comma-separated numbers")
-	offset     = flag.String("offset", "newest", "The offset to start with. Can be `oldest`, `newest`")
+	offset     = flag.String("offset", "newest", "The offset to start with. Can be `oldest`, `newest` default: newest")
+	bulk       = flag.Int("bulk", 1, "number of recod to send to kinesis default:1")
+	proctime   = flag.Int("proctime", 4, "processing time for kafka event default:4")
 	verbose    = flag.Bool("verbose", false, "Whether to turn on sarama logging")
-	bufferSize = flag.Int("buffer-size", 256, "The buffer size of the message channel.")
 
-	consumerGroup  = flag.String("group", "default", "The name of the consumer group, used for coordination and load balancing")
+	consumerGroup  = flag.String("group", "default-group", "The name of the consumer group, used for coordination and load balancing default:default-group")
 	zookeeper      = flag.String("zookeeper", os.Getenv("ZOOKEEPER_PEERS"), "A comma-separated Zookeeper connection string (e.g. `zookeeper1.local:2181,zookeeper2.local:2181`)")
 	zookeeperNodes []string
 
 	stream = flag.String("stream", "your-stream", "your stream name")
-	region = flag.String("region", "eu-west-1", "your AWS region")
+	region = flag.String("region", os.Getenv("AWS_DEFAULT_REGION"), "AWS region")
 
-	logger = log.New(os.Stderr, "", log.LstdFlags)
 )
 
 func main() {
@@ -52,7 +51,7 @@ func main() {
 	}
 
 	if *verbose {
-		sarama.Logger = logger
+		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
 	config := consumergroup.NewConfig()
@@ -66,7 +65,7 @@ func main() {
 		printUsageErrorAndExit("-offset should be `oldest` or `newest`")
 	}
 
-	config.Offsets.ProcessingTimeout = 10 * time.Second
+	config.Offsets.ProcessingTimeout = 5 * time.Second
 
 	zookeeperNodes, config.Zookeeper.Chroot = kazoo.ParseConnectionString(*zookeeper)
 
@@ -97,6 +96,9 @@ func main() {
 	}()
 
 	eventCount := 0
+	bulkCount := 0
+
+	bulk_buffer := make(map[int][]string)
 	offsets := make(map[string]map[int32]int64)
 
 	for message := range consumer.Messages() {
@@ -109,28 +111,53 @@ func main() {
 			log.Printf("Unexpected offset on %s:%d. Expected %d, found %d, diff %d.\n", message.Topic, message.Partition, offsets[message.Topic][message.Partition]+1, message.Offset, message.Offset-offsets[message.Topic][message.Partition]+1)
 		}
 
-		fmt.Printf("Partition:%d\t", message.Partition)
-		fmt.Printf("Offset:%d\t", message.Offset)
-		// fmt.Printf("Key:\t%s\n", string(msg.Key))
-		fmt.Printf("Value:%s ", string(message.Value))
+		sarama.Logger.Printf("P:%d O:%d V:%s", message.Partition, message.Offset, string(message.Value))
 
-		_, err := kc.PutRecord(&kinesis.PutRecordInput{
-			Data:         []byte(string(message.Value)),
-			StreamName:   streamName,
-			PartitionKey: aws.String(string(message.Partition)),
-		})
-		if err != nil {
-			panic(err)
+		if *bulk <= 1 {
+
+			_, err := kc.PutRecord(&kinesis.PutRecordInput{
+				Data:         []byte(string(message.Value)),
+				StreamName:   streamName,
+				PartitionKey: aws.String(string(message.Partition)),
+			})
+			if err != nil {
+				panic(err)
+			}
+
+		} else {
+			bulk_buffer[bulkCount] = []string{string(message.Partition), string(message.Value)}
+			bulkCount += 1
+
+			if len(bulk_buffer) >= *bulk {
+
+					sarama.Logger.Printf("send event %d to kinesis %s", len(bulk_buffer), *stream)
+					// put 10 records using PutRecords API
+					entries := make([]*kinesis.PutRecordsRequestEntry, len(bulk_buffer))
+					for key, value := range bulk_buffer {
+						entries[key] = &kinesis.PutRecordsRequestEntry{
+							Data:         []byte(string(value[1])),
+							PartitionKey: aws.String(value[0]),
+						}
+					}
+					_, err := kc.PutRecords(&kinesis.PutRecordsInput{
+						Records:    entries,
+						StreamName: streamName,
+					})
+					if err != nil {
+						fmt.Println(err)
+						panic(err)
+					}
+					bulkCount = 0
+					bulk_buffer = make(map[int][]string)
+
+			}
+
 		}
-		// Simulate processing time
-		// time.Sleep(10 * time.Millisecond)
 
 		offsets[message.Topic][message.Partition] = message.Offset
 		consumer.CommitUpto(message)
 	}
 
-	log.Printf("Processed %d events.", eventCount)
-	log.Printf("%+v", offsets)
 }
 
 func printUsageErrorAndExit(format string, values ...interface{}) {
