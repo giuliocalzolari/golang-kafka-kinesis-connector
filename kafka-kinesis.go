@@ -20,12 +20,12 @@ import (
 var (
 	brokerList = flag.String("brokers", os.Getenv("KAFKA_PEERS"), "The comma separated list of brokers in the Kafka cluster")
 	topic      = flag.String("topic", "", "REQUIRED: the topic to consume")
-	offset     = flag.String("offset", "newest", "The offset to start with. Can be `oldest`, `newest` default: newest")
-	bulk       = flag.Int("bulk", 1, "number of recod to send to kinesis default:1")
-	proctime   = flag.Int("proctime", 4, "processing time for kafka event default:4")
+	offset     = flag.String("offset", "newest", "The offset to start with. Can be `oldest`, `newest`")
+	bulk       = flag.Int("bulk", 1, "number of recod to send to kinesis max value:500")
+	proctime   = flag.Int("proctime", 4, "processing time for kafka event")
 	verbose    = flag.Bool("verbose", false, "Whether to turn on sarama logging")
 
-	consumerGroup  = flag.String("group", "default-group", "The name of the consumer group, used for coordination and load balancing default:default-group")
+	consumerGroup  = flag.String("group", "default-group", "The name of the consumer group, used for coordination and load balancing")
 	zookeeper      = flag.String("zookeeper", os.Getenv("ZOOKEEPER_PEERS"), "A comma-separated Zookeeper connection string (e.g. `zookeeper1.local:2181,zookeeper2.local:2181`)")
 	zookeeperNodes []string
 
@@ -45,6 +45,10 @@ func main() {
 		printUsageErrorAndExit("-topic is required")
 	}
 
+	if *bulk  > 500 {
+		printUsageErrorAndExit("-bulk must me lower than 500, PutRecordsInput support maximum 500 Records")
+	}
+
 	if *zookeeper == "" {
 		flag.PrintDefaults()
 		os.Exit(1)
@@ -53,6 +57,7 @@ func main() {
 	if *verbose {
 		sarama.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
+
 
 	config := consumergroup.NewConfig()
 
@@ -65,17 +70,19 @@ func main() {
 		printUsageErrorAndExit("-offset should be `oldest` or `newest`")
 	}
 
+	// low level config required manul tuning if the elaboation  time is to high
 	config.Offsets.ProcessingTimeout = 5 * time.Second
 
 	zookeeperNodes, config.Zookeeper.Chroot = kazoo.ParseConnectionString(*zookeeper)
-
 	kafkaTopics := strings.Split(*topic, ",")
 
+	// Join to the group using zookeeper coordinator
 	consumer, consumerErr := consumergroup.JoinConsumerGroup(*consumerGroup, kafkaTopics, zookeeperNodes, config)
 	if consumerErr != nil {
 		log.Fatalln(consumerErr)
 	}
 
+	//  setup AWs kinesis client
 	s := session.New(&aws.Config{Region: aws.String(*region)})
 	kc := kinesis.New(s)
 	streamName := aws.String(*stream)
@@ -111,10 +118,10 @@ func main() {
 			log.Printf("Unexpected offset on %s:%d. Expected %d, found %d, diff %d.\n", message.Topic, message.Partition, offsets[message.Topic][message.Partition]+1, message.Offset, message.Offset-offsets[message.Topic][message.Partition]+1)
 		}
 
-		sarama.Logger.Printf("P:%d O:%d V:%s", message.Partition, message.Offset, string(message.Value))
 
 		if *bulk <= 1 {
-
+			sarama.Logger.Printf("P:%d O:%d V:%s", message.Partition, message.Offset, string(message.Value))
+			//  single record push to kinesis
 			_, err := kc.PutRecord(&kinesis.PutRecordInput{
 				Data:         []byte(string(message.Value)),
 				StreamName:   streamName,
@@ -125,13 +132,15 @@ func main() {
 			}
 
 		} else {
+
+			// bulk upload to upload only a certain amount of records
 			bulk_buffer[bulkCount] = []string{string(message.Partition), string(message.Value)}
 			bulkCount += 1
 
 			if len(bulk_buffer) >= *bulk {
 
 					sarama.Logger.Printf("send event %d to kinesis %s", len(bulk_buffer), *stream)
-					// put 10 records using PutRecords API
+					// put X records using PutRecords API
 					entries := make([]*kinesis.PutRecordsRequestEntry, len(bulk_buffer))
 					for key, value := range bulk_buffer {
 						entries[key] = &kinesis.PutRecordsRequestEntry{
@@ -147,6 +156,7 @@ func main() {
 						fmt.Println(err)
 						panic(err)
 					}
+					// cleanup the local buffer
 					bulkCount = 0
 					bulk_buffer = make(map[int][]string)
 
